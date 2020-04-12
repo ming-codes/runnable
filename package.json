@@ -1,0 +1,19 @@
+{
+  "name": "runnable",
+  "version": "1.0.0",
+  "main": "index.js",
+  "license": "MIT",
+  "scripts": {
+    "test": "mocha src/**/*.test.js --require esm --require chai/register-expect",
+    "test:watch": "mocha src/**/*.test.js --require esm --require chai/register-expect --watch",
+    "test:debug": "mocha src/**/*.test.js --require esm --require chai/register-expect --watch --inspect-brk"
+  },
+  "volta": {
+    "node": "13.12.0"
+  },
+  "dependencies": {
+    "chai": "^4.2.0",
+    "esm": "^3.2.25",
+    "mocha": "^7.1.1"
+  }
+}
