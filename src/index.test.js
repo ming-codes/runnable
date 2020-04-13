@@ -41,9 +41,19 @@ function marble(expr, fn) {
   };
 }
 
-function forever() {
+function waitForever() {
   return new Promise(Function.prototype);
 };
+
+function waitForMicroTaskQueue(value) {
+  return Promise.resolve(value);
+}
+
+function waitForTaskQueue(value) {
+  return new Promise(resolve => {
+    setTimeout((() => resolve(value)), 0);
+  });
+}
 
 describe(Runnable.name, function() {
   describe('synchronous usage', function() {
@@ -118,6 +128,31 @@ describe(Runnable.name, function() {
         return 'd';
       });
     }));
+
+    it('should establish parent / child relationship during task construction', function() {
+      const children = [];
+
+      const child = new Runnable(function* () {
+        yield waitForever();
+      });
+
+      const parent = new Runnable(function* () {
+        children.push(child.run());
+        children.push(child.run());
+        children.push(child.run());
+
+        yield waitForever();
+      });
+
+      const inspect = [ ...parent.run().children ];
+
+      expect(inspect[0]).to.equal(children[0]);
+      expect(inspect[1]).to.equal(children[1]);
+      expect(inspect[2]).to.equal(children[2]);
+    });
+
+    it.skip('should allow sync interrupt', function() {
+    });
   });
 
   describe('asynchronous usage', function() {
@@ -127,11 +162,11 @@ describe(Runnable.name, function() {
 
         emit('b');
 
-        yield Promise.resolve();
+        yield waitForMicroTaskQueue();
 
         emit('c');
 
-        return Promise.resolve('d');
+        return waitForMicroTaskQueue('d');
       });
     }));
 
@@ -170,7 +205,7 @@ describe(Runnable.name, function() {
         emit('b');
 
         try {
-          yield forever();
+          yield waitForever();
         } finally {
           return 'e';
         }
@@ -192,7 +227,9 @@ describe(Runnable.name, function() {
         emit('b');
 
         try {
-          yield forever();
+          yield waitForever();
+
+          return 'g';
         } finally {
           throw 'f';
         }
@@ -207,99 +244,102 @@ describe(Runnable.name, function() {
       return task;
     }));
 
-    it.skip('should allow interrupt async task with more yield');
+    it('should allow interrupt async task with more yield', marble('abc|d', function(emit) {
+      const runnable = new Runnable(function* () {
+        emit('a');
 
-    it.only('should establish parent / child relationship during task construction', function() {
-      debugger;
-      const tasks = { children: [] };
+        try {
+          yield waitForever();
+        } finally {
+          emit('b');
 
-      tasks.parent = new Task({
-        next() {
-          const child = new Task({
-            next() {
-              return {
-                done: true,
-                value: forever()
-              };
-            }
-          });
+          yield 1;
 
-          tasks.children.push(child);
+          emit('c');
 
-          return child;
+          yield waitForMicroTaskQueue();
+
+          return 'd';
         }
       });
 
-      expect([ ...tasks.parent.children ][0]).to.equal(tasks.children[0]);
-    });
+      const task = runnable.run();
 
-    it.skip('should establish parent / child relationship through async operations', function() {
-      const tasks = { children: [] };
-
-      tasks.parent = new Task({
-        next() {
-          const child = new Task({
-            next() {
-              return {
-                done: false,
-                value: forever()
-              };
-            }
-          });
-
-          tasks.children.push(child);
-
-          return child;
-        }
+      setTimeout(function() {
+        task.interrupt();
       });
 
-      expect([ ...tasks.parent.children ][0]).to.equal(tasks.children[0]);
+      return task;
+    }));
+
+    it('should establish parent / child relationship during task construction', function() {
+      const children = [];
+
+      const child = new Runnable(function* () {
+        yield waitForever();
+      });
+
+      const parent = new Runnable(function* () {
+        children.push(child.run());
+
+        yield waitForMicroTaskQueue();
+
+        children.push(child.run());
+
+        yield waitForMicroTaskQueue();
+
+        children.push(child.run());
+
+        yield waitForever();
+      });
+
+      const inspect = [ ...parent.run().children ];
+
+      expect(inspect[0]).to.equal(children[0]);
+      expect(inspect[1]).to.equal(children[1]);
+      expect(inspect[2]).to.equal(children[2]);
     });
 
-    it.skip('should allow chaining tasks', marble('ab12cd12ef', function(emit) {
+    it('should allow chaining tasks', marble('ab12cd12ef|aa', function(emit) {
       const child = new Runnable(function* () {
         emit('1');
 
-        yield Promise.resolve();
+        yield waitForMicroTaskQueue();
 
         emit('2');
         
+        return 'a';
       });
-      const parent = new Runnable(function* () {
+
+      return new Runnable(function* () {
         emit('a');
 
         emit('b');
 
-        debugger;
-        yield child.run();
-        debugger;
+        const one = yield child.run();
 
         emit('c');
 
         emit('d');
 
-        yield child.run();
+        const two = yield child.run();
 
         emit('e');
 
         emit('f');
-      });
 
-      return parent.run();
+        return `${one}${two}`;
+      });
     }));
 
-    it.skip('should allow parant cancel to cancel children', marble('ab12a', function(emit) {
+    it.skip('should allow parant cancel to cancel children', marble('ab1cd2|e', function(emit) {
       const child = new Runnable(function* () {
         emit('1');
 
         try {
-          yield forever();
+          yield waitForever();
         } finally {
-          if (Task.canceled) {
-            emit('2a');
-          } else {
-            emit('2b');
-          }
+          emit('2');
         }
       });
       const parent = new Runnable(function* () {
@@ -307,18 +347,32 @@ describe(Runnable.name, function() {
 
         emit('b');
 
-        yield child.run();
+        try {
+          // interrupt cause this to move on from here,
+          // but parent .then is still subscribed to here
+          // so an interrupt need to cause parent to unsubscribe
+          //
+          // When parent reaches a terminal state, then we want to 
+          // interrupt / cancel children tasks.
+          yield child.run();
+        } finally {
+          emit('c');
 
-        emit('c');
+          yield waitForTaskQueue();
 
-        emit('d');
+          emit('d');
+
+          return 'e';
+        }
       });
 
       const task = parent.run();
 
-      Promise.resolve();
+      setTimeout(function() {
+        task.interrupt();
+      });
 
-      task.cancel();
+      return task;
     }));
   });
 });
