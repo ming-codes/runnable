@@ -32,6 +32,7 @@ export class Task {
 
     this.state = RUNNING_STATE;
     this.iterator = iterator;
+    this.subscriptions = new Set();
     this.children = new Set();
 
     if (this.parent) {
@@ -44,6 +45,20 @@ export class Task {
     });
 
     this.proceed(null);
+  }
+
+  subscribe(callback) {
+    this.subscriptions.add(callback);
+
+    return () => {
+      this.subscriptions.delete(callback);
+
+      delete this.unsubscribe;
+    };
+  }
+
+  unsubscribe() {
+    // noop
   }
 
   then(onResolve, onReject) {
@@ -66,19 +81,57 @@ export class Task {
     try {
       if (value === CANCEL_TOKEN) {
         next(this.tap('return', value));
-      } else if (value && typeof value.then === 'function') {
-        value.then(
-          (value => this.step(value, done, next)),
-          (reason => {
+      } else if (value instanceof Task) {
+        if (value.state === RUNNING_STATE) {
+          this.unsubscribe();
+
+          this.unsubscribe = value.subscribe((error, value) => {
             try {
-              next(this.tap('throw', reason));
+              if (error === null) {
+                next(this.iterator.next(value));
+              } else {
+                next(this.iterator.throw(error));
+              }
             } catch (error) {
               next({
                 error: true,
                 value: error
               });
             }
-          })
+          });
+        } else {
+          next({
+            error: value.state === ERROR_STATE,
+            value: value.value
+          });
+        }
+      } else if (value && typeof value.then === 'function') {
+        this.unsubscribe();
+
+        this.unsubscribe = this.subscribe(value);
+
+        value.then(
+          resolved => {
+            if (this.subscriptions.has(value)) {
+              this.unsubscribe();
+
+              this.step(resolved, done, next);
+            }
+          },
+          rejected => {
+            try {
+              if (this.subscriptions.has(value)) {
+                this.unsubscribe();
+
+                next(this.tap('throw', rejected));
+              }
+            } catch (error) {
+              next({
+                error: true,
+                value: error
+              });
+            }
+          }
         );
       } else if (done) {
         next({ value });
@@ -106,7 +159,7 @@ export class Task {
     });
   }
 
-  terminate(state, value, promise) {
+  terminate(state, value, promise, serr, sval) {
     this.state = state;
     this.value = value;
 
@@ -117,15 +170,23 @@ export class Task {
       this.parent = null;
     }
 
+    // notify children
     this.children.forEach(child => {
       child.interrupt();
+    });
+
+    // notify parent
+    this.subscriptions.forEach(subscription => {
+      if (typeof subscription === 'function') {
+        subscription(serr, sval);
+      }
     });
   }
 
   /** @private */
   error(previous) {
     this.step(previous, true, ({ value }) => {
-      this.terminate(ERROR_STATE, value, this.reject);
+      this.terminate(ERROR_STATE, value, this.reject, value, null);
     });
   }
 
@@ -136,7 +197,7 @@ export class Task {
         value = undefined;
       }
 
-      this.terminate(COMPLETE_STATE, value, this.resolve);
+      this.terminate(COMPLETE_STATE, value, this.resolve, null, value);
     });
   }
 
@@ -147,8 +208,7 @@ export class Task {
   // a terminal state. The generator has to choose to go into
   // a terminal state.
   interrupt(reason) {
-    // An interrupt should cause parent to unsubscribe from current wait
-    this.unsubscribe();
+    this.unsubscribe(); // An interrupt should cause parent to unsubscribe from current wait
 
     this.proceed(CANCEL_TOKEN);
   }

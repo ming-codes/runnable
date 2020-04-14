@@ -332,7 +332,7 @@ describe(Runnable.name, function() {
       });
     }));
 
-    it.skip('should allow parant cancel to cancel children', marble('ab1cd2|e', function(emit) {
+    it('should allow parant cancel to cancel children', marble('ab1cd2|e', function(emit) {
       const child = new Runnable(function* () {
         emit('1');
 
@@ -358,7 +358,7 @@ describe(Runnable.name, function() {
         } finally {
           emit('c');
 
-          yield waitForTaskQueue();
+          yield waitForMicroTaskQueue('parent wait');
 
           emit('d');
 
