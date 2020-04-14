@@ -151,8 +151,27 @@ describe(Runnable.name, function() {
       expect(inspect[2]).to.equal(children[2]);
     });
 
-    it.skip('should allow sync interrupt', function() {
-    });
+    it('should not allow sync interrupt', marble('ac|b', function(emit) {
+      const runnable = new Runnable(function* () {
+        emit('a');
+
+        try {
+          yield 1;
+
+          return 'b';
+        } finally {
+          emit('c');
+        }
+      });
+
+      const task = runnable.run();
+
+      // Interrupt cant be synchronous because run is synchronous
+      // and has to pause on something to allow interrupt
+      task.interrupt();
+
+      return task;
+    }));
   });
 
   describe('asynchronous usage', function() {
