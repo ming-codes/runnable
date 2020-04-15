@@ -270,11 +270,15 @@ describe(Runnable.name, function() {
         try {
           yield waitForever();
         } finally {
-          emit('b');
+          if (Task.current.isInterrupt) {
+            emit('b');
+          }
 
           yield 1;
 
-          emit('c');
+          if (!Task.current.isInterrupt) {
+            emit('c');
+          }
 
           yield waitForMicroTaskQueue();
 
@@ -351,14 +355,18 @@ describe(Runnable.name, function() {
       });
     }));
 
-    it('should allow parant cancel to cancel children', marble('ab1cd2|e', function(emit) {
+    it('should allow parant terminal state to interrupt children', marble('ab1cd2|e', function(emit) {
       const child = new Runnable(function* () {
-        emit('1');
+        if (Task.current.isRunning) {
+          emit('1');
+        }
 
         try {
           yield waitForever();
         } finally {
-          emit('2');
+          if (Task.current.isInterrupt) {
+            emit('2');
+          }
         }
       });
       const parent = new Runnable(function* () {
@@ -389,6 +397,56 @@ describe(Runnable.name, function() {
 
       setTimeout(function() {
         task.interrupt();
+      });
+
+      return task;
+    }));
+
+    it('should allow child interrupt to be caught by parent', marble('ab12cde|f', function(emit) {
+      let childTask = null;
+      const child = new Runnable(function* () {
+        emit('1');
+
+        try {
+          yield waitForever();
+        } finally {
+          if (Task.current.isInterrupt) {
+            emit('2');
+          }
+        }
+      });
+      const parent = new Runnable(function* () {
+        emit('a');
+
+        try {
+          emit('b');
+
+          childTask = child.run();
+          yield childTask;
+        } finally {
+          // when parent caught the bubbled up interrupt, it should still be there..until the next yield
+          // all synchronous finally blocks should be able to catch this
+          if (childTask.isInterrupt) {
+            emit('c');
+          }
+          if (!Task.current.isInterrupt) {
+            emit('d');
+          }
+
+          yield waitForMicroTaskQueue('parent wait');
+
+          if (!childTask.isInterrupt) { // Ths interrupt signal should no longer be there
+            emit('e');
+          }
+
+          return 'f';
+        }
+      });
+
+      const task = parent.run();
+
+      setTimeout(function() {
+        childTask.interrupt();
       });
 
       return task;

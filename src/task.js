@@ -5,6 +5,9 @@ const ERROR_STATE = Symbol('error');
 const RUNNING_STATE = Symbol('running');
 const CANCEL_TOKEN = Symbol('cancel');
 
+let currentTask = null;
+let interruptTask = null;
+
 function createDeferred() {
   const deferred = {};
 
@@ -17,6 +20,10 @@ function createDeferred() {
 }
 
 export class Task {
+  static get current() {
+    return currentTask;
+  }
+
   constructor(iterator = null) {
     this.parent = TASK_STACK[TASK_STACK.length - 1] || null;
 
@@ -34,9 +41,22 @@ export class Task {
     this.proceed(null);
   }
 
-  // TODO
-  // this need to be synchronous?
-  // invoke callback immediately if state is terminal
+  get isRunning() {
+    return this.state === RUNNING_STATE;
+  }
+
+  get isComplete() {
+    return this.state === COMPLETE_STATE;
+  }
+
+  get isError() {
+    return this.state === ERROR_STATE;
+  }
+
+  get isInterrupt() {
+    return this === interruptTask;
+  }
+
   subscribe(callback) {
     const unsubscribe = () => {
       this.subscriptions.delete(callback);
@@ -76,8 +96,12 @@ export class Task {
     try {
       TASK_STACK.push(this);
 
+      currentTask = this;
+
       return this.iterator[method](value);
     } finally {
+      currentTask = null;
+
       TASK_STACK.pop();
     }
   }
@@ -94,9 +118,9 @@ export class Task {
           this.unsubscribe = value.subscribe((error, value) => {
             try {
               if (error === null) {
-                next(this.iterator.next(value));
+                next(this.tap('next', value));
               } else {
-                next(this.iterator.throw(error));
+                next(this.tap('throw', error));
               }
             } catch (error) {
               next({
@@ -154,12 +178,20 @@ export class Task {
 
   /** @private */
   proceed(previous) {
+    if (!this.isInterrupt) {
+      interruptTask = null;
+    }
+
     this.step(previous, false, ({ value, done, error }) => {
       if (error) {
         this.error(value);
       } else if (done) {
         this.complete(value);
       } else {
+        if (this.isInterrupt) {
+          interruptTask = null;
+        }
+
         this.proceed(value);
       }
     });
@@ -217,6 +249,10 @@ export class Task {
     this.unsubscribe(); // An interrupt should cause parent to unsubscribe from current wait
 
     if (this.state === RUNNING_STATE) {
+      if (!interruptTask) {
+        interruptTask = this;
+      }
+
       this.proceed(CANCEL_TOKEN);
     }
   }
