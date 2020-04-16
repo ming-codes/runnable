@@ -166,9 +166,9 @@ describe(Runnable.name, function() {
 
       const task = runnable.run();
 
-      // Interrupt cant be synchronous because run is synchronous
-      // and has to pause on something to allow interrupt
-      task.interrupt();
+      // Signal cant be synchronous because run is synchronous
+      // and has to pause on something to allow signal
+      task.signal();
 
       return task;
     }));
@@ -233,7 +233,7 @@ describe(Runnable.name, function() {
       const task = runnable.run();
 
       setTimeout(function() {
-        task.interrupt();
+        task.signal();
       });
 
       return task;
@@ -257,7 +257,7 @@ describe(Runnable.name, function() {
       const task = runnable.run();
 
       setTimeout(function() {
-        task.interrupt();
+        task.signal();
       });
 
       return task;
@@ -270,13 +270,13 @@ describe(Runnable.name, function() {
         try {
           yield waitForever();
         } finally {
-          if (Task.current.isInterrupt) {
+          if (Task.current.hasSignal) {
             emit('b');
           }
 
           yield 1;
 
-          if (!Task.current.isInterrupt) {
+          if (!Task.current.hasSignal) {
             emit('c');
           }
 
@@ -289,7 +289,7 @@ describe(Runnable.name, function() {
       const task = runnable.run();
 
       setTimeout(function() {
-        task.interrupt();
+        task.signal();
       });
 
       return task;
@@ -364,7 +364,7 @@ describe(Runnable.name, function() {
         try {
           yield waitForever();
         } finally {
-          if (Task.current.isInterrupt) {
+          if (Task.current.hasSignal) {
             emit('2');
           }
         }
@@ -375,12 +375,12 @@ describe(Runnable.name, function() {
         emit('b');
 
         try {
-          // interrupt cause this to move on from here,
+          // signal cause this to move on from here,
           // but parent .then is still subscribed to here
-          // so an interrupt need to cause parent to unsubscribe
+          // so an signal need to cause parent to unsubscribe
           //
           // When parent reaches a terminal state, then we want to 
-          // interrupt / cancel children tasks.
+          // signal / cancel children tasks.
           yield child.run();
         } finally {
           emit('c');
@@ -396,7 +396,7 @@ describe(Runnable.name, function() {
       const task = parent.run();
 
       setTimeout(function() {
-        task.interrupt();
+        task.signal();
       });
 
       return task;
@@ -410,7 +410,7 @@ describe(Runnable.name, function() {
         try {
           yield waitForever();
         } finally {
-          if (Task.current.isInterrupt) {
+          if (Task.current.hasSignal) {
             emit('2');
           }
         }
@@ -426,16 +426,16 @@ describe(Runnable.name, function() {
         } finally {
           // when parent caught the bubbled up interrupt, it should still be there..until the next yield
           // all synchronous finally blocks should be able to catch this
-          if (childTask.isInterrupt) {
+          if (childTask.hasSignal) {
             emit('c');
           }
-          if (!Task.current.isInterrupt) {
+          if (!Task.current.hasSignal) {
             emit('d');
           }
 
           yield waitForMicroTaskQueue('parent wait');
 
-          if (!childTask.isInterrupt) { // Ths interrupt signal should no longer be there
+          if (!childTask.hasSignal) { // Ths interrupt signal should no longer be there
             emit('e');
           }
 
@@ -446,7 +446,7 @@ describe(Runnable.name, function() {
       const task = parent.run();
 
       setTimeout(function() {
-        childTask.interrupt();
+        childTask.signal();
       });
 
       return task;

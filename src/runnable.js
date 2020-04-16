@@ -3,7 +3,7 @@ import { Task } from './task';
 export class Runnable {
   constructor(...argv) {
     this.generator = argv.pop();
-    this.concurrency = argv.pop();
+    this.concurrency = argv.pop() || 1;
   }
 
   unsubscribe() {
@@ -44,6 +44,9 @@ export class DropRunnable extends Runnable {
 
     return this.last;
   }
+}
+
+export class FetchRunnable extends Runnable {
 }
 
 // TODO

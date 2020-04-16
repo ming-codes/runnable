@@ -6,7 +6,13 @@ const RUNNING_STATE = Symbol('running');
 const CANCEL_TOKEN = Symbol('cancel');
 
 let currentTask = null;
-let interruptTask = null;
+let currentSignal = null;
+let signalTask = null;
+
+function clearSignal() {
+  currentSignal = null;
+  signalTask = null;
+}
 
 function createDeferred() {
   const deferred = {};
@@ -22,6 +28,10 @@ function createDeferred() {
 export class Task {
   static get current() {
     return currentTask;
+  }
+
+  static get signal() {
+    return currentSignal;
   }
 
   constructor(iterator = null) {
@@ -53,8 +63,8 @@ export class Task {
     return this.state === ERROR_STATE;
   }
 
-  get isInterrupt() {
-    return this === interruptTask;
+  get hasSignal() {
+    return this === signalTask;
   }
 
   subscribe(callback) {
@@ -178,8 +188,8 @@ export class Task {
 
   /** @private */
   proceed(previous) {
-    if (!this.isInterrupt) {
-      interruptTask = null;
+    if (!this.hasSignal) {
+      clearSignal();
     }
 
     this.step(previous, false, ({ value, done, error }) => {
@@ -188,8 +198,8 @@ export class Task {
       } else if (done) {
         this.complete(value);
       } else {
-        if (this.isInterrupt) {
-          interruptTask = null;
+        if (this.hasSignal) {
+          clearSignal();
         }
 
         this.proceed(value);
@@ -210,7 +220,7 @@ export class Task {
 
     // notify children
     this.children.forEach(child => {
-      child.interrupt();
+      child.signal();
     });
 
     // notify parent
@@ -245,12 +255,13 @@ export class Task {
   // But it doesn't. You can't force a generator to go into
   // a terminal state. The generator has to choose to go into
   // a terminal state.
-  interrupt(reason) {
+  signal(reason) {
     this.unsubscribe(); // An interrupt should cause parent to unsubscribe from current wait
 
     if (this.state === RUNNING_STATE) {
-      if (!interruptTask) {
-        interruptTask = this;
+      if (!signalTask) {
+        signalTask = this;
+        currentSignal = reason;
       }
 
       this.proceed(CANCEL_TOKEN);

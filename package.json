@@ -1,19 +1,27 @@
 {
   "name": "runnable",
-  "version": "1.0.0",
-  "main": "index.js",
+  "description": "Tiny little task runner",
+  "version": "0.0.1",
+  "main": "dist/runnable.js",
   "license": "MIT",
+  "source": "src/index.js",
+  "module": "dist/runnable.module.js",
+  "unpkg": "dist/runnable.umd.js",
   "scripts": {
+    "build": "microbundle",
     "test": "mocha src/**/*.test.js --require esm --require chai/register-expect",
     "test:watch": "mocha src/**/*.test.js --require esm --require chai/register-expect --watch",
     "test:debug": "mocha src/**/*.test.js --require esm --require chai/register-expect --watch --inspect-brk"
   },
   "volta": {
-    "node": "13.12.0"
+    "node": "12.16.2"
   },
   "dependencies": {
     "chai": "^4.2.0",
     "esm": "^3.2.25",
     "mocha": "^7.1.1"
+  },
+  "devDependencies": {
+    "microbundle": "^0.11.0"
   }
 }
